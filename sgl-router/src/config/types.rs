@@ -278,6 +278,10 @@ impl RoutingMode {
     }
 }
 
+fn default_sync_interval() -> u64 {  
+        600  
+}
+
 /// Policy configuration for routing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -307,10 +311,6 @@ pub enum PolicyConfig {
         #[serde(default = "default_sync_interval")]  
         sync_interval_secs: u64, 
     },
-
-    fn default_sync_interval() -> u64 {  
-        600  
-    }
 
     #[serde(rename = "power_of_two")]
     PowerOfTwo {

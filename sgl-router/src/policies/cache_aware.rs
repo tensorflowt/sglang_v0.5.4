@@ -68,8 +68,6 @@ use tracing::debug;
 use super::{get_healthy_worker_indices, CacheAwareConfig, LoadBalancingPolicy};
 use crate::{core::Worker, metrics::RouterMetrics, tree::Tree};
 
-use std::{sync::Arc, thread, time::Duration};  
-use dashmap::DashMap;  
 use serde::{Deserialize, Serialize};  
 use tokio::task::JoinHandle;  
 use crate::tokenizer::traits::Tokenizer;
