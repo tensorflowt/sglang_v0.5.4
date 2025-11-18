@@ -105,14 +105,58 @@ pub struct CacheAwarePolicy {
     sync_handle: Option<JoinHandle<()>>,
 }
 
-impl CacheAwarePolicy {
+impl CacheAwarePolicy {  
 
-    // 启动缓存同步任务  
+    pub fn new() -> Self {
+        Self::with_config(CacheAwareConfig::default())
+    }
+
+    pub fn with_config(config: CacheAwareConfig) -> Self {
+        let trees = Arc::new(DashMap::<String, Arc<Tree>>::new());
+
+        // Start background eviction thread if configured
+        let eviction_handle = if config.eviction_interval_secs > 0 {
+            let trees_clone = Arc::clone(&trees);
+            let max_tree_size = config.max_tree_size;
+            let interval = config.eviction_interval_secs;
+
+            Some(thread::spawn(move || loop {
+                thread::sleep(Duration::from_secs(interval));
+
+                // Evict for all model trees
+                for tree_ref in trees_clone.iter() {
+                    let model_id = tree_ref.key();
+                    let tree = tree_ref.value();
+                    tree.evict_tenant_by_size(max_tree_size);
+                    debug!(
+                        "Cache eviction completed for model {}, max_size: {}",
+                        model_id, max_tree_size
+                    );
+                }
+            }))
+        } else {
+            None
+        };
+
+        Self {
+            config,
+            trees,
+            eviction_handle,
+            sync_handle: None,
+        }
+    }
+
+    /// 启动缓存同步任务 (仅在 enable_cache_sync 为 true 时调用)  
     pub fn start_cache_sync(  
         &mut self,  
         prefill_worker_url: String,  
         tokenizer: Arc<dyn Tokenizer>,  
     ) {  
+        if !self.config.enable_cache_sync {  
+            debug!("Cache sync is disabled, skipping sync task initialization");  
+            return;  
+        }  
+  
         let trees = Arc::clone(&self.trees);  
         let sync_interval_secs = self.config.sync_interval_secs;  
           
@@ -158,44 +202,11 @@ impl CacheAwarePolicy {
         });  
           
         self.sync_handle = Some(handle);  
-    }  
-
-    pub fn new() -> Self {
-        Self::with_config(CacheAwareConfig::default())
-    }
-
-    pub fn with_config(config: CacheAwareConfig) -> Self {
-        let trees = Arc::new(DashMap::<String, Arc<Tree>>::new());
-
-        // Start background eviction thread if configured
-        let eviction_handle = if config.eviction_interval_secs > 0 {
-            let trees_clone = Arc::clone(&trees);
-            let max_tree_size = config.max_tree_size;
-            let interval = config.eviction_interval_secs;
-
-            Some(thread::spawn(move || loop {
-                thread::sleep(Duration::from_secs(interval));
-
-                // Evict for all model trees
-                for tree_ref in trees_clone.iter() {
-                    let model_id = tree_ref.key();
-                    let tree = tree_ref.value();
-                    tree.evict_tenant_by_size(max_tree_size);
-                    debug!(
-                        "Cache eviction completed for model {}, max_size: {}",
-                        model_id, max_tree_size
-                    );
-                }
-            }))
-        } else {
-            None
-        };
-
-        Self {
-            config,
-            trees,
-            eviction_handle,
-        }
+        tracing::info!(  
+            "Cache sync enabled for worker {} with interval {} seconds",  
+            prefill_worker_url,  
+            sync_interval_secs  
+        );  
     }
 
     /// Initialize the tree with worker URLs (used only during initial setup)
@@ -291,6 +302,7 @@ impl CacheAwarePolicy {
     }
 }
 
+// 辅助函数
 async fn fetch_cache_tree_from_worker(  
     worker_url: &str  
 ) -> Result<RadixTreeResponse, Box<dyn std::error::Error>> {  

@@ -32,6 +32,7 @@ class RouterArgs:
     balance_abs_threshold: int = 64
     balance_rel_threshold: float = 1.5
     eviction_interval_secs: int = 120
+    enable_cache_sync: bool = False  # 新增: 默认关闭缓存同步
     sync_interval_secs: int = 600 # 新增同步间隔参数 
     max_tree_size: int = 2**26
     max_payload_size: int = 512 * 1024 * 1024  # 512MB default for large batches
@@ -577,6 +578,14 @@ class RouterArgs:
             help="Oracle connection pool timeout in seconds (default: 30, env: ATP_POOL_TIMEOUT_SECS)",
         )
         # 在 add_cli_args 方法中添加  
+
+        parser.add_argument(  
+            f"--{prefix}enable-cache-sync",  
+            action="store_true",  
+            default=RouterArgs.enable_cache_sync,  
+            help="Enable cache tree synchronization from prefill workers",  
+        ) 
+
         parser.add_argument(
             f"--{prefix}sync-interval-secs",  
             type=int,  

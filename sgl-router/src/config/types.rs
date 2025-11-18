@@ -300,6 +300,9 @@ pub enum PolicyConfig {
         eviction_interval_secs: u64,
         /// Maximum cache tree size per tenant
         max_tree_size: usize,
+        /// Enable cache tree synchronization from prefill workers  
+        #[serde(default)]  
+        enable_cache_sync: bool,
         /// Interval for syncing cache tree from prefill workers (seconds)  
         #[serde(default = "default_sync_interval")]  
         sync_interval_secs: u64, 

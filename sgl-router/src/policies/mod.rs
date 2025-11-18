@@ -94,6 +94,7 @@ pub struct CacheAwareConfig {
     pub balance_rel_threshold: f32,
     pub eviction_interval_secs: u64,
     pub max_tree_size: usize,
+    pub enable_cache_sync: bool,  
     pub sync_interval_secs: u64,
 }
 
@@ -105,6 +106,7 @@ impl Default for CacheAwareConfig {
             balance_rel_threshold: 1.1,
             eviction_interval_secs: 30,
             max_tree_size: 10000,
+            enable_cache_sync: false,  // 默认关闭缓存同步
             sync_interval_secs: 600, 
         }
     }
