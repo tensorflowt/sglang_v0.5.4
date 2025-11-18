@@ -24,6 +24,7 @@ impl PolicyFactory {
                 balance_rel_threshold,
                 eviction_interval_secs,
                 max_tree_size,
+                sync_interval_secs, 
             } => {
                 let config = CacheAwareConfig {
                     cache_threshold: *cache_threshold,
@@ -31,6 +32,7 @@ impl PolicyFactory {
                     balance_rel_threshold: *balance_rel_threshold,
                     eviction_interval_secs: *eviction_interval_secs,
                     max_tree_size: *max_tree_size,
+                    sync_interval_secs: *sync_interval_secs, 
                 };
                 Arc::new(CacheAwarePolicy::with_config(config))
             }

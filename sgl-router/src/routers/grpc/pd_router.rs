@@ -92,6 +92,35 @@ impl GrpcPDRouter {
             ctx.configured_reasoning_parser.clone(),
         );
 
+        // 启动缓存同步  
+        if let Some(prefill_policy) = policy_registry.get_prefill_policy() {  
+            if let Some(cache_aware) = prefill_policy.as_any()  
+                .downcast_ref::<CacheAwarePolicy>()   
+            {  
+                // 获取第一个 prefill worker URL  
+                let prefill_workers = worker_registry.get_workers_filtered(  
+                    None,  
+                    Some(WorkerType::Prefill { bootstrap_port: None }),  
+                    None,  
+                    false,  
+                );  
+                  
+                if let Some(worker) = prefill_workers.first() {  
+                    let mut policy_mut = Arc::try_unwrap(prefill_policy)  
+                        .unwrap_or_else(|arc| (*arc).clone());  
+                      
+                    if let Some(cache_aware_mut) = (&mut policy_mut as &mut dyn std::any::Any)  
+                        .downcast_mut::<CacheAwarePolicy>()  
+                    {  
+                        cache_aware_mut.start_cache_sync(  
+                            worker.url().to_string(),  
+                            tokenizer.clone(),  
+                        );  
+                    }  
+                }  
+            }  
+        }
+
         Ok(GrpcPDRouter {
             worker_registry,
             policy_registry,

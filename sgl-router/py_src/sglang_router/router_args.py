@@ -32,6 +32,7 @@ class RouterArgs:
     balance_abs_threshold: int = 64
     balance_rel_threshold: float = 1.5
     eviction_interval_secs: int = 120
+    sync_interval_secs: int = 600 # 新增同步间隔参数 
     max_tree_size: int = 2**26
     max_payload_size: int = 512 * 1024 * 1024  # 512MB default for large batches
     dp_aware: bool = False
@@ -574,6 +575,13 @@ class RouterArgs:
                 os.getenv("ATP_POOL_TIMEOUT_SECS", RouterArgs.oracle_pool_timeout_secs)
             ),
             help="Oracle connection pool timeout in seconds (default: 30, env: ATP_POOL_TIMEOUT_SECS)",
+        )
+        # 在 add_cli_args 方法中添加  
+        parser.add_argument(
+            f"--{prefix}sync-interval-secs",  
+            type=int,  
+            default=RouterArgs.sync_interval_secs,  
+            help="Interval in seconds for syncing cache tree from prefill workers",  
         )
 
     @classmethod

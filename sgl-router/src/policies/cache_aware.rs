@@ -68,6 +68,30 @@ use tracing::debug;
 use super::{get_healthy_worker_indices, CacheAwareConfig, LoadBalancingPolicy};
 use crate::{core::Worker, metrics::RouterMetrics, tree::Tree};
 
+use std::{sync::Arc, thread, time::Duration};  
+use dashmap::DashMap;  
+use serde::{Deserialize, Serialize};  
+use tokio::task::JoinHandle;  
+use crate::tokenizer::traits::Tokenizer;
+
+// 添加响应数据结构  
+#[derive(Debug, Deserialize, Serialize)]  
+struct RadixTreeResponse {  
+    ops_id: u64,  
+    ops_id_finished: u64,  
+    instance_id: String,  
+    node_ip: String,  
+    server_port: u16,  
+    tree: RadixTreeNode,  
+}  
+  
+#[derive(Debug, Deserialize, Serialize)]  
+struct RadixTreeNode {  
+    key: Vec<u32>,  
+    value: Vec<u32>,  
+    children: Vec<RadixTreeNode>,  
+}  
+
 /// Cache-aware routing policy
 ///
 /// Routes requests based on cache affinity when load is balanced,
@@ -78,9 +102,64 @@ pub struct CacheAwarePolicy {
     config: CacheAwareConfig,
     trees: Arc<DashMap<String, Arc<Tree>>>,
     eviction_handle: Option<thread::JoinHandle<()>>,
+    sync_handle: Option<JoinHandle<()>>,
 }
 
 impl CacheAwarePolicy {
+
+    // 启动缓存同步任务  
+    pub fn start_cache_sync(  
+        &mut self,  
+        prefill_worker_url: String,  
+        tokenizer: Arc<dyn Tokenizer>,  
+    ) {  
+        let trees = Arc::clone(&self.trees);  
+        let sync_interval_secs = self.config.sync_interval_secs;  
+          
+        let handle = tokio::spawn(async move {  
+            let mut interval = tokio::time::interval(  
+                tokio::time::Duration::from_secs(sync_interval_secs)  
+            );  
+              
+            loop {  
+                interval.tick().await;  
+                  
+                match fetch_cache_tree_from_worker(&prefill_worker_url).await {  
+                    Ok(tree_response) => {  
+                        tracing::info!(  
+                            "Fetched cache tree from {} (ops_id: {}, instance_id: {})",  
+                            prefill_worker_url,  
+                            tree_response.ops_id,  
+                            tree_response.instance_id  
+                        );  
+                          
+                        match detokenize_tree(&tree_response, &tokenizer) {  
+                            Ok(string_tree) => {  
+                                replace_tree(&trees, &tree_response, string_tree);  
+                            }  
+                            Err(e) => {  
+                                tracing::warn!(  
+                                    "Failed to detokenize tree from {}: {}",  
+                                    prefill_worker_url,  
+                                    e  
+                                );  
+                            }  
+                        }  
+                    }  
+                    Err(e) => {  
+                        tracing::warn!(  
+                            "Failed to fetch cache tree from {}: {}",   
+                            prefill_worker_url,   
+                            e  
+                        );  
+                    }  
+                }  
+            }  
+        });  
+          
+        self.sync_handle = Some(handle);  
+    }  
+
     pub fn new() -> Self {
         Self::with_config(CacheAwareConfig::default())
     }
@@ -210,6 +289,83 @@ impl CacheAwarePolicy {
             );
         }
     }
+}
+
+async fn fetch_cache_tree_from_worker(  
+    worker_url: &str  
+) -> Result<RadixTreeResponse, Box<dyn std::error::Error>> {  
+    let client = reqwest::Client::new();  
+    let response = client  
+        .get(format!("{}/v1/radixtree/full", worker_url))  
+        .send()  
+        .await?;  
+      
+    let tree_response: RadixTreeResponse = response.json().await?;  
+    Ok(tree_response)  
+}  
+  
+fn detokenize_tree(  
+    tree_response: &RadixTreeResponse,  
+    tokenizer: &Arc<dyn Tokenizer>,  
+) -> Result<Tree, Box<dyn std::error::Error>> {  
+    let new_tree = Tree::new();  
+    let tenant = format!("{}:{}", tree_response.node_ip, tree_response.server_port);  
+      
+    fn process_node(  
+        node: &RadixTreeNode,  
+        tree: &Tree,  
+        tokenizer: &Arc<dyn Tokenizer>,  
+        tenant: &str,  
+        accumulated_tokens: &mut Vec<u32>,  
+    ) -> Result<(), Box<dyn std::error::Error>> {  
+        accumulated_tokens.extend_from_slice(&node.key);  
+          
+        if !accumulated_tokens.is_empty() {  
+            let text = tokenizer.decode(accumulated_tokens, false)?;  
+            tree.insert(&text, tenant);  
+        }  
+          
+        for child in &node.children {  
+            let mut child_tokens = accumulated_tokens.clone();  
+            process_node(child, tree, tokenizer, tenant, &mut child_tokens)?;  
+        }  
+          
+        Ok(())  
+    }  
+      
+    let mut initial_tokens = Vec::new();  
+    process_node(&tree_response.tree, &new_tree, tokenizer, &tenant, &mut initial_tokens)?;  
+    Ok(new_tree)  
+}  
+  
+fn replace_tree(  
+    trees: &Arc<DashMap<String, Arc<Tree>>>,  
+    tree_response: &RadixTreeResponse,  
+    new_tree: Tree,  
+) {  
+    let model_id = "default";  
+    trees.insert(model_id.to_string(), Arc::new(new_tree));  
+      
+    tracing::info!(  
+        "Replaced cache tree for instance {} ({}:{}) in model {}, ops_id: {}",  
+        tree_response.instance_id,  
+        tree_response.node_ip,  
+        tree_response.server_port,  
+        model_id,  
+        tree_response.ops_id  
+    );  
+}  
+  
+impl Drop for CacheAwarePolicy {  
+    fn drop(&mut self) {  
+        if let Some(handle) = self.eviction_handle.take() {  
+            drop(handle);  
+        }  
+          
+        if let Some(handle) = self.sync_handle.take() {  
+            handle.abort();  
+        }  
+    }  
 }
 
 impl LoadBalancingPolicy for CacheAwarePolicy {
