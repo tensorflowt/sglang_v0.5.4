@@ -437,6 +437,8 @@ impl Router {
         backend = BackendType::Sglang,
         history_backend = HistoryBackendType::Memory,
         oracle_config = None,
+        enable_cache_sync = false,
+        sync_interval_secs = 600,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -506,6 +508,8 @@ impl Router {
         backend: BackendType,
         history_backend: HistoryBackendType,
         oracle_config: Option<PyOracleConfig>,
+        enable_cache_sync: bool, 
+        sync_interval_secs: u64,
     ) -> PyResult<Self> {
         let mut all_urls = worker_urls.clone();
 
