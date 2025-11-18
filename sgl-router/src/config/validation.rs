@@ -191,6 +191,8 @@ impl ConfigValidator {
                 balance_rel_threshold,
                 eviction_interval_secs,
                 max_tree_size,
+                enable_cache_sync, 
+                sync_interval_secs, 
             } => {
                 if !(0.0..=1.0).contains(cache_threshold) {
                     return Err(ConfigError::InvalidValue {
@@ -223,6 +225,15 @@ impl ConfigValidator {
                         reason: "Must be > 0".to_string(),
                     });
                 }
+
+                // 验证同步间隔参数  
+                if *enable_cache_sync && *sync_interval_secs == 0 {  
+                    return Err(ConfigError::InvalidValue {  
+                        field: "sync_interval_secs".to_string(),  
+                        value: sync_interval_secs.to_string(),  
+                        reason: "Must be > 0 when enable_cache_sync is true".to_string(),  
+                    });  
+                }  
             }
             PolicyConfig::PowerOfTwo {
                 load_check_interval_secs,

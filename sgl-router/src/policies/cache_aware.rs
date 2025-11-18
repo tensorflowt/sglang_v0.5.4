@@ -144,6 +144,31 @@ impl CacheAwarePolicy {
         }
     }
 
+    /// 获取配置的不可变引用  
+    pub fn config(&self) -> &CacheAwareConfig {  
+        &self.config  
+    } 
+
+    /// 检查是否启用了缓存同步功能  
+    pub fn is_cache_sync_enabled(&self) -> bool {  
+        self.config.enable_cache_sync  
+    }  
+
+    /// 获取同步间隔(秒)  
+    pub fn sync_interval_secs(&self) -> u64 {  
+        self.config.sync_interval_secs  
+    }
+
+    /// 获取缓存阈值  
+    pub fn cache_threshold(&self) -> f32 {  
+        self.config.cache_threshold  
+    }
+
+    /// 获取最大树大小  
+    pub fn max_tree_size(&self) -> usize {  
+        self.config.max_tree_size  
+    } 
+
     /// 启动缓存同步任务 (仅在 enable_cache_sync 为 true 时调用)  
     pub fn start_cache_sync(  
         &mut self,  
@@ -157,6 +182,9 @@ impl CacheAwarePolicy {
   
         let trees = Arc::clone(&self.trees);  
         let sync_interval_secs = self.config.sync_interval_secs;  
+
+        // 克隆 URL 用于日志记录  
+        let worker_url_for_log = prefill_worker_url.clone();
           
         let handle = tokio::spawn(async move {  
             let mut interval = tokio::time::interval(  
@@ -172,7 +200,7 @@ impl CacheAwarePolicy {
                             "Fetched cache tree from {} (ops_id: {}, instance_id: {})",  
                             prefill_worker_url,  
                             tree_response.ops_id,  
-                            tree_response.instance_id  
+                            tree_response.instance_id,  
                         );  
                           
                         match detokenize_tree(&tree_response, &tokenizer) {  
@@ -202,7 +230,7 @@ impl CacheAwarePolicy {
         self.sync_handle = Some(handle);  
         tracing::info!(  
             "Cache sync enabled for worker {} with interval {} seconds",  
-            prefill_worker_url,  
+            worker_url_for_log,  
             sync_interval_secs  
         );  
     }
@@ -571,18 +599,6 @@ impl LoadBalancingPolicy for CacheAwarePolicy {
 impl Default for CacheAwarePolicy {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Drop for CacheAwarePolicy {
-    fn drop(&mut self) {
-        // Note: We can't properly stop the eviction thread since it's in an infinite loop
-        // In a production system, we'd use a channel or atomic flag to signal shutdown
-        if let Some(handle) = self.eviction_handle.take() {
-            // The thread will continue running until the program exits
-            // This is acceptable for now since the router typically runs for the lifetime of the program
-            drop(handle);
-        }
     }
 }
 

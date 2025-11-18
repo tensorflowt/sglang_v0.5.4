@@ -15,7 +15,7 @@ use super::{context::SharedComponents, pipeline::RequestPipeline};
 use crate::{
     config::types::RetryConfig,
     core::{ConnectionMode, WorkerRegistry, WorkerType},
-    policies::PolicyRegistry,
+    policies::{CacheAwarePolicy, PolicyRegistry},  // 添加 CacheAwarePolicy  ,
     protocols::{
         chat::ChatCompletionRequest,
         classify::ClassifyRequest,
@@ -93,10 +93,11 @@ impl GrpcPDRouter {
         );
 
         // 启动缓存同步  
-        if let Some(prefill_policy) = policy_registry.get_prefill_policy() {  
-            if let Some(cache_aware) = prefill_policy.as_any()  
-                .downcast_ref::<CacheAwarePolicy>()   
-            {  
+        let prefill_policy = policy_registry.get_prefill_policy(); 
+        // 尝试将其转换为 CacheAwarePolicy  
+        if let Some(cache_aware) = prefill_policy.as_any().downcast_ref::<CacheAwarePolicy>() {  
+            // 检查是否启用了缓存同步  
+            if cache_aware.is_cache_sync_enabled() {  
                 // 获取第一个 prefill worker URL  
                 let prefill_workers = worker_registry.get_workers_filtered(  
                     None,  
@@ -104,19 +105,13 @@ impl GrpcPDRouter {
                     None,  
                     false,  
                 );  
-                  
+                
                 if let Some(worker) = prefill_workers.first() {  
-                    let mut policy_mut = Arc::try_unwrap(prefill_policy)  
-                        .unwrap_or_else(|arc| (*arc).clone());  
-                      
-                    if let Some(cache_aware_mut) = (&mut policy_mut as &mut dyn std::any::Any)  
-                        .downcast_mut::<CacheAwarePolicy>()  
-                    {  
-                        cache_aware_mut.start_cache_sync(  
-                            worker.url().to_string(),  
-                            tokenizer.clone(),  
-                        );  
-                    }  
+                    tracing::info!(  
+                        "Cache sync is enabled for worker {} with interval {} seconds",  
+                        worker.url(),  
+                        cache_aware.sync_interval_secs()  
+                    );  
                 }  
             }  
         }

@@ -354,6 +354,8 @@ impl CliArgs {
                 balance_rel_threshold: self.balance_rel_threshold,
                 eviction_interval_secs: self.eviction_interval,
                 max_tree_size: self.max_tree_size,
+                enable_cache_sync: false,  // 添加此字段,默认关闭  
+                sync_interval_secs: 600,   // 添加此字段,默认 600 秒 
             },
             "power_of_two" => PolicyConfig::PowerOfTwo {
                 load_check_interval_secs: 5,
